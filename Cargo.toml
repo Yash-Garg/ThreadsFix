@@ -12,6 +12,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 worker = "0.0.15"
+reqwest = "0.11.18"
 
 [profile.release]
 lto = true

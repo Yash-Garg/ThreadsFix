@@ -25,6 +25,7 @@
             pkgs.pkg-config
             pkgs.libressl
             pkgs.nodejs_18
+            pkgs.worker-build
           ];
 
           languages.rust.enable = true;
