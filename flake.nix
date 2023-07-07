@@ -1,36 +1,28 @@
 {
   inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
-    devenv.url = "github:cachix/devenv";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
   outputs = {
     self,
     nixpkgs,
-    devenv,
-    ...
-  } @ inputs: let
+    rust-overlay,
+  }: let
     system = "x86_64-linux";
-    pkgs = nixpkgs.legacyPackages.${system};
+    pkgs = import nixpkgs {
+      inherit system;
+      overlays = [rust-overlay.overlays.default];
+    };
+    toolchain = pkgs.rust-bin.fromRustupToolchainFile ./toolchain.toml;
   in {
-    devShell.${system} = devenv.lib.mkShell {
-      inherit inputs pkgs;
-      modules = [
-        ({pkgs, ...}: {
-          enterShell = ''
-            rustc --version
-          '';
-
-          packages = [
-            pkgs.pkg-config
-            pkgs.libressl
-            pkgs.nodejs_18
-            pkgs.worker-build
-          ];
-
-          languages.rust.enable = true;
-          languages.javascript.enable = true;
-        })
+    devShells.${system}.default = pkgs.mkShell {
+      packages = [
+        toolchain
+        pkgs.libressl
+        pkgs.pkg-config
+        pkgs.nodejs_18
+        pkgs.worker-build
       ];
     };
   };
