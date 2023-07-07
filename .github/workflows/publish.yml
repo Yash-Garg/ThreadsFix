@@ -1,0 +1,60 @@
+name: Publish to Workers
+
+on:
+  push:
+    branches:
+      - develop
+  workflow_dispatch:
+  repository_dispatch:
+
+jobs:
+  deploy:
+    name: Deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v3
+
+      - name: Install stable toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: wasm32-unknown-unknown
+          override: true
+
+      - name: Check for errors
+        uses: actions-rs/cargo@v1
+        with:
+          command: check
+
+      - name: Setup node
+        uses: actions/setup-node@v3
+        with:
+          node-version: v18.16.1
+
+      - name: Install packages
+        run: |
+          sudo apt update
+          sudo apt clean
+          sudo apt install -y build-essential libssl-dev pkg-config
+
+      - name: Install wasmpack
+        run: curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+
+      - name: Install npm packages
+        run: npm install
+
+      - name: Install worker-build
+        uses: baptiste0928/cargo-install@v2
+        with:
+          crate: worker-build
+
+      - name: Build worker
+        run: worker-build --release
+
+      - name: Publish worker
+        uses: cloudflare/wrangler-action@2.0.0
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          accountId: ${{ secrets.CF_ACCOUNT_ID }}
+          command: publish
