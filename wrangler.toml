@@ -1,6 +1,15 @@
-name = "worker-rust"
+name = "tr"
 main = "build/worker/shim.mjs"
+workers_dev = false
 compatibility_date = "2023-03-22"
+
+routes = [
+	{ pattern = "tr.yashgarg.dev/*", zone_name = "yashgarg.dev" },
+    { pattern = "https://tr.yashgarg.dev/*", zone_name = "yashgarg.dev" }
+]
 
 [build]
 command = "cargo install -q worker-build && worker-build --release"
+
+[dev]
+port = 3000

@@ -11,8 +11,11 @@ wasm-opt = false
 crate-type = ["cdylib"]
 
 [dependencies]
+askama = "0.12.0"
 worker = "0.0.15"
 reqwest = "0.11.18"
+scraper = "0.17.1"
+getrandom = { version = "0.2", features = ["js"] }
 
 [profile.release]
 lto = true
