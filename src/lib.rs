@@ -1,10 +1,14 @@
+#![allow(dead_code)]
 mod client;
-mod thread;
+mod template;
+mod types;
 
 use worker::*;
 
-#[event(fetch)]
+#[event(fetch, respond_with_errors)]
 async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Response> {
+    console_error_panic_hook::set_once();
+
     let router = Router::new();
 
     router

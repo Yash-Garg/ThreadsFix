@@ -1,62 +1,67 @@
 use std::collections::HashMap;
 
-use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE, USER_AGENT};
+use askama::Template;
+use reqwest::{
+    header::{CONTENT_TYPE, USER_AGENT},
+    Url,
+};
 use serde_json::json;
 use worker::{console_log, Response};
+
+use crate::{template::IndexTemplate, types::InnerThread};
 
 const GQL_URL: &str = "https://www.threads.net/api/graphql";
 
 pub async fn handle_thread_request(thread_id: &str) -> worker::Result<Response> {
     let token = get_token().await;
-    let headers = get_headers(&token);
+    let client = reqwest::Client::builder().build().unwrap();
+    let thread_url = format!("https://www.threads.net/t/{}", thread_id);
 
-    let client = reqwest::Client::builder()
-        .default_headers(headers)
-        .build()
-        .unwrap();
-
-    let post_id = json!({ "postID": thread_id });
+    let post_id = get_post_id(thread_id.to_string()).await;
+    let id = json!({ "postID": post_id }).to_string();
 
     let mut form_data: HashMap<&str, &str> = HashMap::new();
     form_data.insert("lsd", &token.as_str());
-    form_data.insert("variables", post_id.as_str().unwrap());
-    form_data.insert("doc_id", "5587632691339264");
+    form_data.insert("variables", &id);
+    form_data.insert("doc_id", "6529829603744567");
 
     console_log!("form_data: {:#?}", form_data);
-    console_log!("post_id: {:#?}", post_id);
 
-    let thread = client.post(GQL_URL).form(&form_data).send().await;
+    let thread = client
+        .post(GQL_URL)
+        .header(USER_AGENT, "threads-fix")
+        .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
+        .header("X-IG-App-ID", "238260118697367")
+        .header("X-FB-LSD", &token)
+        .header("Sec-Fetch-Site", "same-origin")
+        .form(&form_data)
+        .send()
+        .await;
 
-    Response::ok(format!("{:#?}", thread))
-}
+    match thread {
+        Ok(response) => {
+            let body = response.text().await.unwrap();
+            let data: InnerThread = serde_json::from_str(&body.as_str()).unwrap();
+            let post = &data.data.data.containing.items.first().unwrap().post;
 
-fn get_headers(token: &str) -> HeaderMap {
-    let mut headers = HeaderMap::new();
+            let is_media = post.media.candidates.len() > 0;
 
-    headers.insert(
-        USER_AGENT,
-        HeaderValue::from_static(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)",
-        ),
-    );
-    headers.insert(
-        CONTENT_TYPE,
-        HeaderValue::from_static("application/x-www-form-urlencoded"),
-    );
-    headers.insert(
-        HeaderName::from_static("X-IG-App-ID"),
-        HeaderValue::from_str(&token).unwrap(),
-    );
-    headers.insert(
-        HeaderName::from_static("X-FB-LSD"),
-        HeaderValue::from_str(&token).unwrap(),
-    );
-    headers.insert(
-        HeaderName::from_static("Sec-Fetch-Site"),
-        HeaderValue::from_static("same-origin"),
-    );
+            let template = IndexTemplate {
+                title: format!("{} on Threads", &post.user.username),
+                image: is_media
+                    .then(|| post.media.candidates.first().unwrap().url.clone())
+                    .unwrap_or_else(|| String::from("")),
+                description: String::from(&post.caption.text),
+                url: thread_url.to_string(),
+                width: post.original_width,
+                height: post.original_height,
+                video: String::from(""),
+            };
 
-    headers
+            Response::from_html(template.render().unwrap())
+        }
+        Err(_) => Response::redirect(Url::parse(&thread_url).unwrap()),
+    }
 }
 
 async fn get_token() -> String {
@@ -84,4 +89,29 @@ async fn get_token() -> String {
     console_log!("token: {}", &token);
 
     token
+}
+
+async fn get_post_id(thread_id: String) -> String {
+    let client = reqwest::Client::builder().build().unwrap();
+
+    let response = client
+        .get(format!("https://www.threads.net/t/{}", thread_id))
+        .header(USER_AGENT, "threads-fix")
+        .send()
+        .await
+        .unwrap();
+
+    let body = response.text().await.unwrap();
+    let post_id = body
+        .split("{\"post_id\":\"")
+        .collect::<Vec<&str>>()
+        .get(1)
+        .unwrap()
+        .split("\"")
+        .collect::<Vec<&str>>()
+        .get(0)
+        .unwrap()
+        .to_string();
+
+    post_id
 }
