@@ -8,6 +8,10 @@ routes = [
     { pattern = "https://tr.yashgarg.dev/*", zone_name = "yashgarg.dev" }
 ]
 
+kv_namespaces = [
+    { binding = "COOKIE_STORE", preview_id = "ea4480cc532840ebbda9c74eb102bd4c", id = "783a75abaa91459c9c2fd1aa43929cf2" }
+]
+
 [build]
 # command = "cargo install -q worker-build && worker-build --release"
 

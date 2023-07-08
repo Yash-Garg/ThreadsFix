@@ -2,7 +2,7 @@
 mod client;
 mod template;
 mod types;
-
+use types::KvCookie;
 use worker::*;
 
 #[event(fetch, respond_with_errors)]
@@ -19,11 +19,19 @@ async fn main(req: Request, env: Env, _ctx: worker::Context) -> Result<Response>
         })
         .get_async("/t/:thread_id", |_, ctx| async move {
             let thread_id = ctx.param("thread_id").unwrap();
-            client::handle_thread_request(thread_id).await
+            let kv = ctx.kv("COOKIE_STORE")?;
+            let cookies = kv.get("key").text().await.unwrap().unwrap();
+            let cookies: Vec<KvCookie> = serde_json::from_str(cookies.as_str()).unwrap();
+
+            client::handle_thread_request(thread_id, cookies).await
         })
         .get_async("/t/:thread_id/", |_, ctx| async move {
             let thread_id = ctx.param("thread_id").unwrap();
-            client::handle_thread_request(thread_id).await
+            let kv = ctx.kv("COOKIE_STORE")?;
+            let cookies = kv.get("key").text().await.unwrap().unwrap();
+            let cookies: Vec<KvCookie> = serde_json::from_str(cookies.as_str()).unwrap();
+
+            client::handle_thread_request(thread_id, cookies).await
         })
         .run(req, env)
         .await

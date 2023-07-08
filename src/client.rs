@@ -1,23 +1,44 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, sync::Arc};
 
 use askama::Template;
 use reqwest::{
     header::{CONTENT_TYPE, USER_AGENT},
-    Url,
+    Client, Url,
 };
 use serde_json::json;
 use worker::{console_log, Response};
 
-use crate::{template::IndexTemplate, types::InnerThread};
+use crate::{
+    template::IndexTemplate,
+    types::{InnerThread, KvCookie},
+};
 
 const GQL_URL: &str = "https://www.threads.net/api/graphql";
 
-pub async fn handle_thread_request(thread_id: &str) -> worker::Result<Response> {
+pub async fn handle_thread_request(
+    thread_id: &str,
+    cookies: Vec<KvCookie>,
+) -> worker::Result<Response> {
     let token = get_token().await;
-    let client = reqwest::Client::builder().build().unwrap();
     let thread_url = format!("https://www.threads.net/t/{}", thread_id);
 
-    let post_id = get_post_id(thread_id.to_string()).await;
+    let jar = reqwest::cookie::Jar::default();
+    for cookie in cookies.iter() {
+        jar.add_cookie_str(
+            KvCookie::to_cookie_crate(cookie.clone())
+                .to_string()
+                .as_str(),
+            &Url::parse(&thread_url).unwrap(),
+        );
+    }
+
+    let client = reqwest::Client::builder()
+        .cookie_store(true)
+        .cookie_provider(Arc::new(jar))
+        .build()
+        .unwrap();
+
+    let post_id = get_post_id(thread_id.to_string(), client.clone()).await;
     let id = json!({ "postID": post_id }).to_string();
 
     let mut form_data: HashMap<&str, &str> = HashMap::new();
@@ -58,7 +79,8 @@ pub async fn handle_thread_request(thread_id: &str) -> worker::Result<Response> 
                 video: String::from(""),
             };
 
-            Response::from_html(template.render().unwrap())
+            let rendered = template.render().unwrap();
+            Response::from_html(rendered)
         }
         Err(_) => Response::redirect(Url::parse(&thread_url).unwrap()),
     }
@@ -91,9 +113,7 @@ async fn get_token() -> String {
     token
 }
 
-async fn get_post_id(thread_id: String) -> String {
-    let client = reqwest::Client::builder().build().unwrap();
-
+async fn get_post_id(thread_id: String, client: Client) -> String {
     let response = client
         .get(format!("https://www.threads.net/t/{}", thread_id))
         .header(USER_AGENT, "threads-fix")
