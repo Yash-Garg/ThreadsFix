@@ -9,7 +9,7 @@ routes = [
 ]
 
 [build]
-# command = "cargo install -q worker-build && worker-build --release"
+command = "cargo install -q worker-build && worker-build --release"
 
 [dev]
 port = 3000

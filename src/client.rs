@@ -1,103 +1,87 @@
+use std::collections::HashMap;
+
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue, CONTENT_TYPE, USER_AGENT};
+use serde_json::json;
 use worker::{console_log, Response};
 
-use crate::thread::{self, IndexTemplate};
-use askama::Template;
-use reqwest::{
-    header::{
-        HeaderMap, HeaderName, HeaderValue, ACCEPT, ACCEPT_LANGUAGE, CACHE_CONTROL, REFERER,
-        UPGRADE_INSECURE_REQUESTS, USER_AGENT,
-    },
-    Url,
-};
+const GQL_URL: &str = "https://www.threads.net/api/graphql";
 
-const BASE_URL: &str = "https://www.threads.net";
+pub async fn handle_thread_request(thread_id: &str) -> worker::Result<Response> {
+    let token = get_token().await;
+    let headers = get_headers(&token);
 
-pub fn get_headers(thread_id: &str) -> HeaderMap {
+    let client = reqwest::Client::builder()
+        .default_headers(headers)
+        .build()
+        .unwrap();
+
+    let post_id = json!({ "postID": thread_id });
+
+    let mut form_data: HashMap<&str, &str> = HashMap::new();
+    form_data.insert("lsd", &token.as_str());
+    form_data.insert("variables", post_id.as_str().unwrap());
+    form_data.insert("doc_id", "5587632691339264");
+
+    console_log!("form_data: {:#?}", form_data);
+    console_log!("post_id: {:#?}", post_id);
+
+    let thread = client.post(GQL_URL).form(&form_data).send().await;
+
+    Response::ok(format!("{:#?}", thread))
+}
+
+fn get_headers(token: &str) -> HeaderMap {
     let mut headers = HeaderMap::new();
-    let url = Url::parse(&format!("{}/t/{}", BASE_URL, thread_id)).unwrap();
 
-    headers.insert(
-        HeaderName::from_static("authority"),
-        HeaderValue::from_static("www.threads.net"),
-    );
-    headers.insert(
-        ACCEPT,
-        HeaderValue::from_static(
-            "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9",
-        ),
-    );
-    headers.insert(ACCEPT_LANGUAGE, HeaderValue::from_static("en-US,en;q=0.9"));
-    headers.insert(CACHE_CONTROL, HeaderValue::from_static("max-age=0"));
-    headers.insert(
-        HeaderName::from_static("sec-fetch-mode"),
-        HeaderValue::from_static("navigate"),
-    );
-    headers.insert(UPGRADE_INSECURE_REQUESTS, HeaderValue::from_static("1"));
-    headers.insert(REFERER, HeaderValue::from_str(&url.to_string()).unwrap());
     headers.insert(
         USER_AGENT,
         HeaderValue::from_static(
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) \
-        AppleWebKit/537.36 (KHTML, like Gecko) Chrome/100.0.4896.60 Safari/537.36",
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)",
         ),
     );
     headers.insert(
-        HeaderName::from_static("viewport-width"),
-        HeaderValue::from_static("1280"),
+        CONTENT_TYPE,
+        HeaderValue::from_static("application/x-www-form-urlencoded"),
+    );
+    headers.insert(
+        HeaderName::from_static("X-IG-App-ID"),
+        HeaderValue::from_str(&token).unwrap(),
+    );
+    headers.insert(
+        HeaderName::from_static("X-FB-LSD"),
+        HeaderValue::from_str(&token).unwrap(),
+    );
+    headers.insert(
+        HeaderName::from_static("Sec-Fetch-Site"),
+        HeaderValue::from_static("same-origin"),
     );
 
     headers
 }
 
-pub async fn handle_thread_request(thread_id: &str) -> worker::Result<Response> {
-    let client = reqwest::Client::builder()
-        .default_headers(get_headers(&thread_id))
-        .build()
+async fn get_token() -> String {
+    let client = reqwest::Client::builder().build().unwrap();
+
+    let response = client
+        .get("https://www.threads.net/@instagram")
+        .send()
+        .await
         .unwrap();
 
-    let url = format!("{}/t/{}", BASE_URL, thread_id);
-    let thread = client.get(&url).send().await;
+    let body = response.text().await.unwrap();
 
-    match thread {
-        Ok(response) => {
-            let body = response.text().await.unwrap();
-            let doc = scraper::Html::parse_document(&body);
+    let token = body
+        .split("{\"token\":\"")
+        .collect::<Vec<&str>>()
+        .get(1)
+        .unwrap()
+        .split("\"")
+        .collect::<Vec<&str>>()
+        .get(0)
+        .unwrap()
+        .to_string();
 
-            let meta = &doc
-                .select(&scraper::Selector::parse("meta[name], meta[property]").unwrap())
-                .map(|element| {
-                    let name = element.value().attr("name");
-                    let property = element.value().attr("property");
-                    let content = element.value().attr("content");
+    console_log!("token: {}", &token);
 
-                    match (name, property, content) {
-                        (Some(name), _, Some(content)) => (name, content),
-                        (_, Some(property), Some(content)) => (property, content),
-                        _ => ("", ""),
-                    }
-                })
-                .collect::<Vec<_>>();
-
-            let thread = thread::Thread::parse(meta.to_vec());
-            console_log!("Meta: {:?}", &meta);
-
-            let template_model = IndexTemplate {
-                title: thread.title,
-                description: thread.description,
-                image: thread.image,
-                video: String::from(""),
-                url: url.clone(),
-                width: 1280,
-                height: 720,
-            };
-
-            let body = template_model.render();
-
-            match body {
-                Ok(body) => Response::from_html(body),
-                Err(_) => Response::redirect(Url::parse(&url).unwrap()),
-            }
-        }
-        Err(_) => Response::error("Thread not found", 404),
-    }
+    token
 }

@@ -24,6 +24,11 @@
         pkgs.nodejs_18
         pkgs.worker-build
       ];
+
+      shellHook = ''
+        rustc --version
+        node --version
+      '';
     };
   };
 }
