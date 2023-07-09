@@ -68,14 +68,18 @@ pub async fn handle_thread_request(
             let is_media = post.media.candidates.len() > 0;
 
             let template = IndexTemplate {
-                title: format!("{} on Threads", &post.user.username),
+                title: format!("@{} on Threads", &post.user.username),
                 image: is_media
                     .then(|| post.media.candidates.first().unwrap().url.clone())
                     .unwrap_or_else(|| String::from("")),
                 description: String::from(&post.caption.text),
                 url: thread_url.to_string(),
-                width: post.original_width,
-                height: post.original_height,
+                width: is_media
+                    .then(|| post.media.candidates.first().unwrap().width.clone())
+                    .unwrap_or_else(|| post.original_width),
+                height: is_media
+                    .then(|| post.media.candidates.first().unwrap().height.clone())
+                    .unwrap_or_else(|| post.original_height),
                 video: String::from(""),
             };
 
